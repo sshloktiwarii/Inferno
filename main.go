@@ -20,7 +20,7 @@ import (
 
 // checkPortAvailable probes if a given TCP port can be bound.
 func checkPortAvailable(port int) bool {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		return false
 	}
@@ -38,7 +38,7 @@ func main() {
 	targetPort := *portFlag
 	if !checkPortAvailable(targetPort) {
 		log.Printf("[INVARIANT WARNING] Port %d is occupied. Probing alternate ports...", targetPort)
-		for p := 8086; p < 8095; p++ {
+		for p := targetPort + 1; p < targetPort+50; p++ {
 			if checkPortAvailable(p) {
 				targetPort = p
 				break
@@ -46,7 +46,7 @@ func main() {
 		}
 	}
 
-	log.Printf("Initializing Inferno Telemetry Proxy on :%d...", targetPort)
+	log.Printf("Initializing Inferno Telemetry Proxy on 127.0.0.1:%d...", targetPort)
 
 	// 1. Initialize Dynamic Batcher
 	dynBatcher := batcher.NewDynamicBatcher(time.Duration(*batchWindowMs)*time.Millisecond, *batchLimit)
@@ -62,7 +62,7 @@ func main() {
 	srvHandler := proxy.NewServer(dynBatcher, governor, tracker)
 
 	httpServer := &http.Server{
-		Addr:         fmt.Sprintf(":%d", targetPort),
+		Addr:         fmt.Sprintf("127.0.0.1:%d", targetPort),
 		Handler:      srvHandler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
