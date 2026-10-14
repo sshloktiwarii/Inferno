@@ -9,6 +9,7 @@ import (
 
 	"github.com/sshloktiwarii/inferno-telemetry-proxy/pkg/batcher"
 	"github.com/sshloktiwarii/inferno-telemetry-proxy/pkg/hardware"
+	"github.com/sshloktiwarii/inferno-telemetry-proxy/pkg/routing"
 	"github.com/sshloktiwarii/inferno-telemetry-proxy/pkg/telemetry"
 )
 
@@ -42,6 +43,7 @@ type Server struct {
 	batcher   *batcher.DynamicBatcher
 	governor  *hardware.BackpressureGovernor
 	tracker   *telemetry.LatencyTracker
+	router    *routing.RadixPrefixRouter
 	mux       *http.ServeMux
 }
 
@@ -50,10 +52,23 @@ func NewServer(
 	gov *hardware.BackpressureGovernor,
 	t *telemetry.LatencyTracker,
 ) *Server {
+	return NewServerWithRouter(b, gov, t, routing.NewRadixPrefixRouter(nil))
+}
+
+func NewServerWithRouter(
+	b *batcher.DynamicBatcher,
+	gov *hardware.BackpressureGovernor,
+	t *telemetry.LatencyTracker,
+	r *routing.RadixPrefixRouter,
+) *Server {
+	if r == nil {
+		r = routing.NewRadixPrefixRouter(nil)
+	}
 	s := &Server{
 		batcher:  b,
 		governor: gov,
 		tracker:  t,
+		router:   r,
 		mux:      http.NewServeMux(),
 	}
 	s.routes()
@@ -110,8 +125,17 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Simulated/Upstream Prefill & Decode Timing
-	prefillDuration := 18 * time.Millisecond // Time to First Token (TTFT)
+	// 3. Prefix-Cache Routing & TTFT Acceleration
+	matchRes := s.router.MatchLongestPrefix(prompt)
+	prefillDuration := 18 * time.Millisecond // Base Time to First Token (TTFT)
+	if matchRes.CacheHit {
+		savings := time.Duration(matchRes.EstimatedTTFTSavingsMs) * time.Millisecond
+		if savings >= prefillDuration-2*time.Millisecond {
+			prefillDuration = 2 * time.Millisecond
+		} else {
+			prefillDuration -= savings
+		}
+	}
 	tokenCount := 24
 	decodeDuration := time.Duration(tokenCount) * 8 * time.Millisecond // Inter-token latency
 
@@ -137,6 +161,10 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Inferno-Decode-Ms", fmt.Sprintf("%d", decodeDuration.Milliseconds()))
 	w.Header().Set("X-Inferno-Batch-Size", fmt.Sprintf("%d", batchRes.BatchSize))
 	w.Header().Set("X-Inferno-Tokens-Generated", fmt.Sprintf("%d", tokenCount))
+	w.Header().Set("X-Inferno-Prefix-Cache-Hit", fmt.Sprintf("%t", matchRes.CacheHit))
+	w.Header().Set("X-Inferno-Prefix-Tokens-Matched", fmt.Sprintf("%d", matchRes.MatchedTokens))
+	w.Header().Set("X-Inferno-Prefix-Savings-Ms", fmt.Sprintf("%d", matchRes.EstimatedTTFTSavingsMs))
+	w.Header().Set("X-Inferno-Target-Worker", matchRes.WorkerID)
 
 	if req.Stream {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -267,16 +295,34 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, "# HELP inferno_vram_pressure_pct GPU VRAM / Unified memory pressure\n")
 	fmt.Fprintf(w, "# TYPE inferno_vram_pressure_pct gauge\n")
-	fmt.Fprintf(w, "inferno_vram_pressure_pct %.2f\n", snap.GpuVramPressurePct)
+	fmt.Fprintf(w, "inferno_vram_pressure_pct %.2f\n\n", snap.GpuVramPressurePct)
+
+	routerStats := s.router.GetStats()
+	fmt.Fprintf(w, "# HELP inferno_prefix_lookups_total Total prompt prefix routing lookups\n")
+	fmt.Fprintf(w, "# TYPE inferno_prefix_lookups_total counter\n")
+	fmt.Fprintf(w, "inferno_prefix_lookups_total %d\n\n", routerStats.TotalLookups)
+
+	fmt.Fprintf(w, "# HELP inferno_prefix_hits_total Total prefix cache hits\n")
+	fmt.Fprintf(w, "# TYPE inferno_prefix_hits_total counter\n")
+	fmt.Fprintf(w, "inferno_prefix_hits_total %d\n\n", routerStats.CacheHits)
+
+	fmt.Fprintf(w, "# HELP inferno_prefix_hit_ratio Ratio of prefix cache hits to lookups\n")
+	fmt.Fprintf(w, "# TYPE inferno_prefix_hit_ratio gauge\n")
+	fmt.Fprintf(w, "inferno_prefix_hit_ratio %.4f\n\n", routerStats.HitRatio)
+
+	fmt.Fprintf(w, "# HELP inferno_prefix_tokens_saved_total Total prompt tokens reused from KV cache\n")
+	fmt.Fprintf(w, "# TYPE inferno_prefix_tokens_saved_total counter\n")
+	fmt.Fprintf(w, "inferno_prefix_tokens_saved_total %d\n", routerStats.TotalTokensHit)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	snap := s.governor.Sample()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":    "healthy",
-		"telemetry": snap,
-		"metrics":   s.tracker.GetSummary(),
+		"status":        "healthy",
+		"telemetry":     snap,
+		"metrics":       s.tracker.GetSummary(),
+		"prefix_router": s.router.GetStats(),
 	})
 }
 

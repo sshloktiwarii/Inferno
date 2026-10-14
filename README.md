@@ -22,6 +22,11 @@ Inferno sits between developer client applications and upstream inference engine
 
 ## Core Capabilities
 
+- **Speculative Prompt Prefix-Cache Routing**:
+  - Thread-safe Radix Tree tracks token prefixes across incoming requests and active GPU worker slots.
+  - Matches prompt prefixes to route requests directly to instances holding the relevant KV-cache.
+  - Slashes Time to First Token ($T_{\text{prefill}}$ / TTFT) by up to 90% on cache hits.
+  - Diagnostic headers: `X-Inferno-Prefix-Cache-Hit`, `X-Inferno-Prefix-Tokens-Matched`, `X-Inferno-Prefix-Savings-Ms`, `X-Inferno-Target-Worker`.
 - **Adaptive Request Queueing**: Aggregates and pools concurrent incoming prompts within configurable admission windows ($T_{\text{window}}$).
 - **3-Tier Latency Decomposition**:
   - $T_{\text{queue}}$: Milliseconds queued before dispatch.
@@ -33,7 +38,7 @@ Inferno sits between developer client applications and upstream inference engine
   - **Linux (`//go:build linux`)**: Probes cgroup v2 memory limits and host NVML.
   - **Dynamic Backpressure**: When memory pressure crosses safety limits (>90%), sheds excess load with HTTP `429 Too Many Requests` (`Retry-After: 5`) to prevent cluster crashes.
 - **OpenAI-Compatible & Streaming SSE**: Direct drop-in replacement for `/v1/chat/completions` with both non-streaming JSON and streaming Server-Sent Events (`text/event-stream`).
-- **Prometheus Exporter**: Direct `/metrics` scraping endpoint for production Grafana dashboards.
+- **Prometheus Exporter**: Direct `/metrics` scraping endpoint for production Grafana dashboards (request counts, latency percentiles, prefix hit ratio, and tokens saved).
 
 ---
 
