@@ -1,8 +1,8 @@
-# Inferno Telemetry & Concurrency Gateway 🚀
+# Inferno Telemetry & Concurrency Gateway
 
 > **High-Throughput Inference Gateway with Adaptive Request Queueing, 3-Tier Latency Instrumentation & Hardware Telemetry**
 >
-> 📖 **New to this project?** Read the [Plain-English Guide for Dummies](file:///Users/shloktiwari/Documents/untitled%20folder/inferno-telemetry-proxy/README_FOR_DUMMIES.md) for a zero-jargon overview, everyday analogies, and a 60-second test walk-through.
+> **New to this project?** Read the [Plain-English Guide for Dummies](file:///Users/shloktiwari/Documents/untitled%20folder/inferno-telemetry-proxy/README_FOR_DUMMIES.md) for a zero-jargon overview, everyday analogies, and a 60-second test walk-through.
 
 Inferno solves the **Compute Economics & Hardware Saturation Problem** in LLM serving. In production, unthrottled concurrent requests overwhelm GPU clusters, causing catastrophic Time-to-First-Token spikes (TTFT > 4s), decode latency stutter, and unrecoverable Out-Of-Memory (OOM) kernel panics.
 
@@ -10,7 +10,7 @@ Inferno sits between developer client applications and upstream inference engine
 
 ---
 
-## ⚡ Architectural Division of Responsibility
+## Architectural Division of Responsibility
 
 | Capability | GPU Inference Engine (vLLM / TensorRT / llama.cpp) | Inferno Telemetry Gateway |
 | :--- | :--- | :--- |
@@ -22,7 +22,7 @@ Inferno sits between developer client applications and upstream inference engine
 
 ---
 
-## 🛠️ Core Capabilities
+## Core Capabilities
 
 - **Adaptive Request Queueing**: Aggregates and pools concurrent incoming prompts within configurable admission windows ($T_{\text{window}}$).
 - **3-Tier Latency Decomposition**:
@@ -39,7 +39,7 @@ Inferno sits between developer client applications and upstream inference engine
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Run Unit & Integration Tests
 ```bash
@@ -73,5 +73,5 @@ curl http://localhost:8085/health
 
 ---
 
-## 📜 License
+## License
 MIT License (c) 2026 Shlok Tiwari
