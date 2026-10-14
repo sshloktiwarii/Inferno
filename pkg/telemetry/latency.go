@@ -22,6 +22,7 @@ type RequestMetrics struct {
 // PercentileSummary contains p50, p95, p99 latency stats.
 type PercentileSummary struct {
 	Count             int     `json:"count"`
+	CancelledCount    int     `json:"cancelled_count"`
 	TotalTokens       int     `json:"total_tokens"`
 	P50QueueMs        float64 `json:"p50_queue_ms"`
 	P95QueueMs        float64 `json:"p95_queue_ms"`
@@ -37,8 +38,9 @@ type PercentileSummary struct {
 
 // LatencyTracker records request metrics and calculates percentiles.
 type LatencyTracker struct {
-	mu      sync.RWMutex
-	records []RequestMetrics
+	mu        sync.RWMutex
+	records   []RequestMetrics
+	cancelled int
 }
 
 func NewLatencyTracker() *LatencyTracker {
@@ -51,6 +53,18 @@ func (lt *LatencyTracker) Record(m RequestMetrics) {
 	lt.mu.Lock()
 	defer lt.mu.Unlock()
 	lt.records = append(lt.records, m)
+}
+
+func (lt *LatencyTracker) RecordCancellation() {
+	lt.mu.Lock()
+	defer lt.mu.Unlock()
+	lt.cancelled++
+}
+
+func (lt *LatencyTracker) GetCancelledCount() int {
+	lt.mu.RLock()
+	defer lt.mu.RUnlock()
+	return lt.cancelled
 }
 
 func (lt *LatencyTracker) GetSummary() PercentileSummary {
@@ -98,6 +112,7 @@ func (lt *LatencyTracker) GetSummary() PercentileSummary {
 
 	return PercentileSummary{
 		Count:           n,
+		CancelledCount:  lt.cancelled,
 		TotalTokens:     totalTokens,
 		P50QueueMs:      queueTimes[p50Idx],
 		P95QueueMs:      queueTimes[p95Idx],

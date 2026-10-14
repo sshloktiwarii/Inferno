@@ -1,0 +1,211 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "title": "3-Tier Latency Telemetry ($T_{queue}, T_{prefill}, T_{decode}$)",
+      "type": "row"
+    },
+    {
+      "id": 1,
+      "title": "3-Tier Latency Breakdown (p50 / p95 / p99)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "inferno_queue_latency_ms{quantile=\"0.50\"}",
+          "legendFormat": "T_queue (p50)"
+        },
+        {
+          "expr": "inferno_queue_latency_ms{quantile=\"0.95\"}",
+          "legendFormat": "T_queue (p95)"
+        },
+        {
+          "expr": "inferno_ttft_ms{quantile=\"0.50\"}",
+          "legendFormat": "T_prefill / TTFT (p50)"
+        },
+        {
+          "expr": "inferno_ttft_ms{quantile=\"0.95\"}",
+          "legendFormat": "T_prefill / TTFT (p95)"
+        },
+        {
+          "expr": "inferno_itl_ms{quantile=\"0.50\"}",
+          "legendFormat": "T_decode / ITL (p50)"
+        },
+        {
+          "expr": "inferno_itl_ms{quantile=\"0.95\"}",
+          "legendFormat": "T_decode / ITL (p95)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "GPU VRAM / Unified Memory Pressure (%)",
+      "type": "gauge",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "inferno_vram_pressure_pct",
+          "legendFormat": "Memory Pressure"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 75 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Request Throughput & Client Disconnects",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "rate(inferno_requests_total[1m])",
+          "legendFormat": "Completed Req/sec"
+        },
+        {
+          "expr": "rate(inferno_requests_cancelled_total[1m])",
+          "legendFormat": "Client Disconnects / sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line"
+          }
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "id": 101,
+      "title": "Throughput & Compute Economics",
+      "type": "row"
+    },
+    {
+      "id": 4,
+      "title": "Token Generation Rate (Tokens/sec)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "targets": [
+        {
+          "expr": "rate(inferno_tokens_total[1m])",
+          "legendFormat": "Tokens Generated / sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 40
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Total Completed Requests vs Aborted Streams",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "targets": [
+        {
+          "expr": "inferno_requests_total",
+          "legendFormat": "Completed"
+        },
+        {
+          "expr": "inferno_requests_cancelled_total",
+          "legendFormat": "Cancelled / Disconnected"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      }
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["inferno", "llm-telemetry", "prometheus"],
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Inferno Inference Telemetry & Backpressure Gateway",
+  "version": 1
+}

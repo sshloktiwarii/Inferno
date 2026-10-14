@@ -149,8 +149,17 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		ctx := r.Context()
 		words := strings.Fields(batchRes.ResponseText)
 		for i, word := range words {
+			select {
+			case <-ctx.Done():
+				// Client disconnected or cancelled request: abort streaming immediately
+				s.tracker.RecordCancellation()
+				return
+			default:
+			}
+
 			chunk := map[string]interface{}{
 				"id":      reqID,
 				"object":  "chat.completion.chunk",
@@ -167,15 +176,31 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				},
 			}
 			data, _ := json.Marshal(chunk)
-			fmt.Fprintf(w, "data: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+				// Socket write failed (client disconnected)
+				s.tracker.RecordCancellation()
+				return
+			}
 			flusher.Flush()
+
 			if i < len(words)-1 {
-				time.Sleep(5 * time.Millisecond)
+				select {
+				case <-ctx.Done():
+					s.tracker.RecordCancellation()
+					return
+				case <-time.After(5 * time.Millisecond):
+				}
 			}
 		}
 
-		fmt.Fprintf(w, "data: [DONE]\n\n")
-		flusher.Flush()
+		select {
+		case <-ctx.Done():
+			s.tracker.RecordCancellation()
+			return
+		default:
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+			flusher.Flush()
+		}
 		return
 	}
 
@@ -214,6 +239,10 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "# TYPE inferno_requests_total counter\n")
 	fmt.Fprintf(w, "inferno_requests_total %d\n\n", summary.Count)
 
+	fmt.Fprintf(w, "# HELP inferno_requests_cancelled_total Total client-cancelled inference streams\n")
+	fmt.Fprintf(w, "# TYPE inferno_requests_cancelled_total counter\n")
+	fmt.Fprintf(w, "inferno_requests_cancelled_total %d\n\n", summary.CancelledCount)
+
 	fmt.Fprintf(w, "# HELP inferno_tokens_total Total tokens generated\n")
 	fmt.Fprintf(w, "# TYPE inferno_tokens_total counter\n")
 	fmt.Fprintf(w, "inferno_tokens_total %d\n\n", summary.TotalTokens)
@@ -229,6 +258,12 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "inferno_ttft_ms{quantile=\"0.50\"} %.2f\n", summary.P50PrefillMs)
 	fmt.Fprintf(w, "inferno_ttft_ms{quantile=\"0.95\"} %.2f\n", summary.P95PrefillMs)
 	fmt.Fprintf(w, "inferno_ttft_ms{quantile=\"0.99\"} %.2f\n\n", summary.P99PrefillMs)
+
+	fmt.Fprintf(w, "# HELP inferno_itl_ms Inter-Token Latency (decode) percentiles\n")
+	fmt.Fprintf(w, "# TYPE inferno_itl_ms gauge\n")
+	fmt.Fprintf(w, "inferno_itl_ms{quantile=\"0.50\"} %.2f\n", summary.P50DecodeMs)
+	fmt.Fprintf(w, "inferno_itl_ms{quantile=\"0.95\"} %.2f\n", summary.P95DecodeMs)
+	fmt.Fprintf(w, "inferno_itl_ms{quantile=\"0.99\"} %.2f\n\n", summary.P99DecodeMs)
 
 	fmt.Fprintf(w, "# HELP inferno_vram_pressure_pct GPU VRAM / Unified memory pressure\n")
 	fmt.Fprintf(w, "# TYPE inferno_vram_pressure_pct gauge\n")
