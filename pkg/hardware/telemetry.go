@@ -45,34 +45,28 @@ func (bg *BackpressureGovernor) SetSimulatedVramPressure(pct float64) {
 	bg.simulatedVramPressurePct = pct
 }
 
-// Sample inspects system memory statistics and updates telemetry.
+// Sample inspects hardware memory statistics via platform-specific probes.
 func (bg *BackpressureGovernor) Sample() TelemetrySnapshot {
 	bg.mu.Lock()
 	defer bg.mu.Unlock()
 
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
-	pressurePct := 0.0
-	if m.Sys > 0 {
-		pressurePct = (float64(m.Alloc) / float64(m.Sys)) * 100.0
-	}
+	hostPressurePct, totalMem, usedMem := platformProbe()
 
 	vramPressure := bg.simulatedVramPressurePct
 	if vramPressure == 0 {
-		// Default conservative baseline: align with host memory pressure
-		vramPressure = pressurePct * 0.8
+		// Default: correlate simulated VRAM pressure with platform memory pressure
+		vramPressure = hostPressurePct
 	}
 
-	backpressure := pressurePct >= bg.maxMemoryPressurePct || vramPressure >= bg.maxMemoryPressurePct
+	backpressure := hostPressurePct >= bg.maxMemoryPressurePct || vramPressure >= bg.maxMemoryPressurePct
 
 	snapshot := TelemetrySnapshot{
 		Timestamp:          time.Now(),
-		AllocatedMemBytes:  m.Alloc,
-		TotalSysMemBytes:   m.Sys,
-		MemoryPressurePct:  pressurePct,
-		GpuVramUsedBytes:   uint64(vramPressure * 100000000),
-		GpuVramTotalBytes:  16 * 1024 * 1024 * 1024, // 16GB reference VRAM
+		AllocatedMemBytes:  usedMem,
+		TotalSysMemBytes:   totalMem,
+		MemoryPressurePct:  hostPressurePct,
+		GpuVramUsedBytes:   uint64(vramPressure * 160000000),
+		GpuVramTotalBytes:  16 * 1024 * 1024 * 1024,
 		GpuVramPressurePct: vramPressure,
 		BackpressureActive: backpressure,
 		ActiveGoroutines:   runtime.NumGoroutine(),
@@ -86,7 +80,7 @@ func (bg *BackpressureGovernor) Sample() TelemetrySnapshot {
 func (bg *BackpressureGovernor) ShouldThrottle() (bool, string) {
 	snap := bg.Sample()
 	if snap.BackpressureActive {
-		return true, "Hardware telemetry limit exceeded: VRAM/Memory pressure above safety threshold (>90%)"
+		return true, "Inference gateway throttle: VRAM/Host memory pressure exceeded threshold (>90%)"
 	}
 	return false, ""
 }
