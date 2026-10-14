@@ -1,6 +1,8 @@
 # Inferno Telemetry & Concurrency Gateway 🚀
 
 > **High-Throughput Inference Gateway with Adaptive Request Queueing, 3-Tier Latency Instrumentation & Hardware Telemetry**
+>
+> 📖 **New to this project?** Read the [Plain-English Guide for Dummies](file:///Users/shloktiwari/Documents/untitled%20folder/inferno-telemetry-proxy/README_FOR_DUMMIES.md) for a zero-jargon overview, everyday analogies, and a 60-second test walk-through.
 
 Inferno solves the **Compute Economics & Hardware Saturation Problem** in LLM serving. In production, unthrottled concurrent requests overwhelm GPU clusters, causing catastrophic Time-to-First-Token spikes (TTFT > 4s), decode latency stutter, and unrecoverable Out-Of-Memory (OOM) kernel panics.
 
