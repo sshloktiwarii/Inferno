@@ -23,3 +23,11 @@ go.work
 bin/
 dist/
 inferno
+
+# System & temporary files
+*.log
+*.tmp
+*.swp
+__pycache__/
+*.pyc
+.env.local
