@@ -1,6 +1,7 @@
 package hardware
 
 import (
+	"fmt"
 	"runtime"
 	"sync"
 	"time"
@@ -19,12 +20,13 @@ type TelemetrySnapshot struct {
 	ActiveGoroutines   int       `json:"active_goroutines"`
 }
 
-// BackpressureGovernor manages admission control based on hardware telemetry.
+// BackpressureGovernor manages admission control based on hardware telemetry and dynamic AIMD.
 type BackpressureGovernor struct {
-	mu                      sync.RWMutex
-	maxMemoryPressurePct    float64
+	mu                       sync.RWMutex
+	maxMemoryPressurePct     float64
 	simulatedVramPressurePct float64
-	lastSnapshot            TelemetrySnapshot
+	lastSnapshot             TelemetrySnapshot
+	aimd                     *DynamicAimdController
 }
 
 func NewBackpressureGovernor(maxMemoryPressurePct float64) *BackpressureGovernor {
@@ -33,9 +35,15 @@ func NewBackpressureGovernor(maxMemoryPressurePct float64) *BackpressureGovernor
 	}
 	gov := &BackpressureGovernor{
 		maxMemoryPressurePct: maxMemoryPressurePct,
+		aimd:                 NewDynamicAimdController(32, 2, 256, 500*time.Millisecond),
 	}
 	gov.Sample()
 	return gov
+}
+
+// Aimd returns the underlying DynamicAimdController.
+func (bg *BackpressureGovernor) Aimd() *DynamicAimdController {
+	return bg.aimd
 }
 
 // SetSimulatedVramPressure enables testing VRAM pressure triggers deterministically.
@@ -77,10 +85,15 @@ func (bg *BackpressureGovernor) Sample() TelemetrySnapshot {
 }
 
 // ShouldThrottle checks if an incoming inference request should be admitted or rejected.
+// Evaluates both memory pressure telemetry and dynamic AIMD concurrency window limits.
 func (bg *BackpressureGovernor) ShouldThrottle() (bool, string) {
 	snap := bg.Sample()
 	if snap.BackpressureActive {
 		return true, "Inference gateway throttle: VRAM/Host memory pressure exceeded threshold (>90%)"
+	}
+	if !bg.aimd.Acquire() {
+		w, inFlight, _, _ := bg.aimd.WindowStats()
+		return true, fmt.Sprintf("Inference gateway throttle: dynamic AIMD concurrency window saturated (%d/%d in-flight)", inFlight, w)
 	}
 	return false, ""
 }

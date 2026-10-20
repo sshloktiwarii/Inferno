@@ -87,17 +87,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	// 1. Hardware Backpressure Check
+	// 1. Hardware Backpressure & AIMD Concurrency Check
 	if throttle, reason := s.governor.ShouldThrottle(); throttle {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Retry-After", "5")
 		w.WriteHeader(http.StatusTooManyRequests)
 		json.NewEncoder(w).Encode(map[string]string{
-			"error": "rate_limit_exceeded",
+			"error":   "rate_limit_exceeded",
 			"message": reason,
 		})
 		return
 	}
+	defer s.governor.Aimd().Release()
 
 	var req ChatCompletionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -141,7 +142,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	totalLatency := batchRes.QueueLatency + prefillDuration + decodeDuration
 
-	// 4. Record 3-Tier Latency Telemetry
+	// 4. Record 3-Tier Latency Telemetry and Additive Increase for AIMD
 	metrics := telemetry.RequestMetrics{
 		RequestID:       reqID,
 		Model:           req.Model,
@@ -154,6 +155,9 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		Timestamp:       time.Now(),
 	}
 	s.tracker.Record(metrics)
+	s.governor.Aimd().RecordSuccess()
+
+	curWin, inFlight, _, _ := s.governor.Aimd().WindowStats()
 
 	// Set Telemetry Diagnostics Response Headers
 	w.Header().Set("X-Inferno-Queue-Ms", fmt.Sprintf("%d", batchRes.QueueLatency.Milliseconds()))
@@ -165,6 +169,8 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Inferno-Prefix-Tokens-Matched", fmt.Sprintf("%d", matchRes.MatchedTokens))
 	w.Header().Set("X-Inferno-Prefix-Savings-Ms", fmt.Sprintf("%d", matchRes.EstimatedTTFTSavingsMs))
 	w.Header().Set("X-Inferno-Target-Worker", matchRes.WorkerID)
+	w.Header().Set("X-Inferno-Aimd-Window", fmt.Sprintf("%d", curWin))
+	w.Header().Set("X-Inferno-Aimd-Inflight", fmt.Sprintf("%d", inFlight))
 
 	if req.Stream {
 		w.Header().Set("Content-Type", "text/event-stream")
